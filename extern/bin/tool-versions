@@ -1,0 +1,224 @@
+#!/usr/bin/env bash
+#
+#$Info: tool-versions - displays version information for selected development tools. $
+#
+# Requirements for this script:
+# - bash
+# - uname
+# - perl
+# - grep
+# - sed
+
+export CC CXX
+
+function Tool_versions()
+{
+  # Defaults
+  local EXTRA QUIET TOOLS
+  export NOCOLOR CXX CC
+  EXTRA=0
+  QUIET=0
+  TOOLS=()
+  # Color support
+  local CRED CGRN="" CCYN="" BOLD="" NONE=""
+  if [[ "${NOCOLOR}" != 1 ]]; then
+    CRED="[91m" CGRN="[92m" CCYN="[93m" BOLD="[1m" NONE="[0m"
+  fi
+  while [[ $# != 0 ]]; do
+    case "$1" in
+      -h|--help)
+        cat <<EOT
+NAME
+----
+
+  $0 - Display the versions of tools
+
+SYNOPSIS
+--------
+
+  $0 -h|--help
+  $0 --version
+  $0 [OPTIONS] [TOOL...]
+
+DESCRIPTION
+-----------
+
+This script is useful to produce a quick list of tools in your environment. You can use when creating a bug report or when creating information about how something was tested.
+
+OPTIONS
+-------
+
+| OPTION    | SHORT | DESCRIPTION                        |
+| :-----    | :---: | :----------                        |
+| --color   |  -C   | Use color (default)                |
+| --extras  |  -x   | Show extra tools                   |
+| --help    |  -h   | Display this help                  |
+| --loud    |  -l   | Yell about missing tools (default) |
+| --nocolor |  -N   | No color                           |
+| --quiet   |  -q   | Don't complain about missing tools |
+| --version |  -v   | Show version of this script        |
+
+EOT
+        exit
+        ;;
+      -x|--extras)  EXTRA=1 ;;
+      -C|--color)   NOCOLOR=0 CRED="[91m" CGRN="[92m" BOLD="[1m" NONE="[0m" ;;
+      -l|--loud)    QUIET=0 ;;
+      -N|--nocolor) NOCOLOR=1 CRED=""       CGRN=""       BOLD=""      NONE="" ;;
+      -q|--quiet)   QUIET=1 ;;
+      -v|--version) echo "version 1.1" ; exit ;;
+      -*)           echo "Error: Uknown option: $1"; exit 1 ;;
+       *)           TOOLS+=("$1") ;;
+    esac
+    shift
+  done
+      
+  # Default tools
+  local -a TOOLS EXTRAS
+  if [[ "${#TOOLS[@]}" == 0 ]]; then
+    TOOLS=(
+      systemc-version
+      g++
+      clang++
+      cmake
+      autoconf
+      make
+      gmake
+      ninja
+      gdb
+      lldb
+      bash
+      zsh
+      perl
+      python
+      python3
+    )
+  fi
+  EXTRAS=(
+    ag 
+    clang-format
+    clang-tidy
+    git
+    grep
+    sed
+    tree
+    uname
+    rsync
+    shellcheck
+  )
+
+  local PERL5 UNAME
+  PERL5="perl"
+  # shellcheck disable=SC2312
+  if [[ -n "$(command -v perl5 )" ]]; then
+    PERL5="perl5"
+  fi
+  UNAME="uname"
+  # shellcheck disable=SC2312
+  if [[ -n "$(command -v guname )" ]]; then
+    UNAME="guname"
+  fi
+
+  if [[ ${EXTRA} == 1 ]]; then
+    TOOLS=("${TOOLS[@]}" "${EXTRAS[@]}")
+  fi
+
+  #-------------------------------------------------------------------------------
+  # Filters
+  #-------------------------------------------------------------------------------
+  local FILTER
+  FILTER='AUTHORS'
+  FILTER+='|Capabilities'
+  FILTER+='|Copyright'
+  FILTER+='|Features'
+  FILTER+='|internal'
+  FILTER+='|Install'
+  FILTER+='|License'
+  FILTER+='|Licence'
+  FILTER+='|licenses'
+  FILTER+='|lzma'
+  FILTER+='|maintained'
+  FILTER+='|rsync.samba'
+  FILTER+='|ShellCheck'
+  FILTER+='|Swift'
+  FILTER+='|There'
+  FILTER+='|This'
+  FILTER+='|Thread'
+  FILTER+='|Target'
+  FILTER+='|website'
+  FILTER+='|welcome'
+  FILTER+='|Written'
+
+  echo "----------------------------------------"
+  export NODATE
+  if [[ -z "${NODATE}" ]]; then
+    date
+  fi
+
+  #-------------------------------------------------------------------------------
+  # Announce the Host information
+  #-------------------------------------------------------------------------------
+  local HOSTOS OS PERLSCRIPT
+  HOSTOS="$("${UNAME}" -s)"
+  case "${HOSTOS}" in
+    Darwin) 
+      "${UNAME}" -moprv
+      OS="$(sw_vers --productName) "
+      OS+="$(sw_vers --productVersion)"
+      OS+="$(sw_vers --productVersionExtra) "
+      OS+="$(sw_vers --buildVersion) "
+      echo "${OS}"
+      ;;
+    *)
+      "${UNAME}" -smoprv
+      # shellcheck disable=SC2312
+      if [[ -n "$(command -v wsl.exe )" ]]; then
+        echo -n "WSL "
+      fi
+      if [[ -r /etc/os-release ]]; then
+        # shellcheck disable=SC2034,SC2016
+        PERLSCRIPT='if(m{PRETTY_NAME="([^"]+)"}){$os=$1;$os=~s{Oracle}{CentOS};print $os;}'
+        "${PERL5}" -lne "${PERLSCRIPT}" /etc/os-release
+      fi
+      ;;
+  esac
+
+  echo "........................................"
+
+  #-------------------------------------------------------------------------------
+  # Display each of the tools
+  #-------------------------------------------------------------------------------
+  local TOOL EXISTS PATTERN
+  for TOOL in "${TOOLS[@]}"; do
+    EXISTS="$(command -v "${TOOL}")"
+    PATTERN=""
+    SUBST="s/This is perl/Perl/"
+    if [[ -n "${EXISTS}" ]]; then
+      case "${TOOL}" in
+        g[+][+]|clang|bash|zsh) PATTERN="${TOOL}" ;;
+        make|gmake) PATTERN="Make" ;;
+        clang-tidy|git|perl|rsync|shellcheck) PATTERN="version" ;;
+        *)   PATTERN+="" ;;
+      esac
+      echo -n "${CGRN}${TOOL}${NONE} - "
+      # shellcheck disable=SC2312
+      "${TOOL}" --version 2>/dev/null \
+      | "${PERL5}" -ne "${SUBST}; print if m/${PATTERN}/ and not m/(${FILTER})/ and not m/^$/" \
+      ;
+    elif [[ ${QUIET} != 1 ]]; then
+      echo "${CRED}${TOOL} - ${BOLD}MISSING${NONE}"
+    fi
+  done
+  if [[ -n "${CXX}" ]]; then
+    echo "${CCYN}export CXX=${CXX}${NONE}"
+  fi
+  if [[ -n "${CC}" ]]; then
+    echo "${CCYN}export CC=${CC}${NONE}"
+  fi
+
+  echo "----------------------------------------"
+}
+
+Tool_versions "$@"
+
+# vim:nospell
